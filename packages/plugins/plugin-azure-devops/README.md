@@ -71,3 +71,25 @@ No CEO agent is needed: companies can run with only these developer agents.
   branch are refused.
 - The `pr-status` job (every 5 minutes) marks the task `done` once its PR is
   completed, and comments when a PR is abandoned.
+
+## Testing against a real Azure DevOps organization
+
+1. Sign up at https://dev.azure.com (free for up to 5 users) and create an organization.
+2. Create a private project with **Git** and the **Agile** process. Initialize the default
+   repo and add a second one (for example `api`). Add a branch policy on `main` that
+   requires a reviewer so agents can only land changes through pull requests.
+3. Add team members under Organization settings → Users and Project settings → Teams.
+4. Create a PAT (user menu → Personal access tokens) with Work Items (Read & write),
+   Code (Read & write) and Project and Team (Read). Save it as the `AZURE_DEVOPS_PAT`
+   company secret.
+5. Configure the plugin on **Company settings → Azure DevOps**, then run, in order:
+   **Test connection**, **Sync team developer agents**, and **Sync board now** after
+   creating a work item tagged `repo:api` and assigned to a team member.
+6. Expected: an `[AB#n]` task assigned to that member's agent; moving it to
+   `in_progress` sets the work item to Active; the agent's pull request is linked to the
+   work item; merging it marks the task done.
+7. Optional: add a Service Hook (Web Hooks, "Work item created/updated") pointing at the
+   plugin's `work-items` webhook URL with the configured webhook secret. Azure must be
+   able to reach your Paperclip URL, for example through a tunnel.
+
+`tests/scenario.spec.ts` runs this flow against an in-memory fake of the Azure REST API.

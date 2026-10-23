@@ -44,6 +44,7 @@ import type {
   PrincipalPermissionGrant,
   PermissionKey,
   PrincipalType,
+  PluginManagedAgentOverrides,
 } from "./types.js";
 import { NOOP_PLUGIN_TRACER } from "./types.js";
 import type {
@@ -696,10 +697,26 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
 
   const defaultPluginOriginKind: PluginIssueOriginKind = `plugin:${manifest.id}`;
 
-  function managedAgentDeclaration(agentKey: string) {
-    const declaration = manifest.agents?.find((agent) => agent.agentKey === agentKey);
-    if (!declaration) throw new Error(`Managed agent declaration not found: ${agentKey}`);
-    return declaration;
+  // Mirrors the host: `multiInstance` templates resolve `${template}:${instance}` keys.
+  function managedAgentDeclaration(agentKey: string, overrides?: PluginManagedAgentOverrides) {
+    const exact = manifest.agents?.find((agent) => agent.agentKey === agentKey);
+    if (exact) return exact;
+    const separator = agentKey.lastIndexOf(":");
+    const template = separator > 0
+      ? manifest.agents?.find((agent) => agent.multiInstance && agent.agentKey === agentKey.slice(0, separator))
+      : undefined;
+    if (!template) throw new Error(`Managed agent declaration not found: ${agentKey}`);
+    return {
+      ...template,
+      agentKey,
+      ...(overrides?.displayName ? { displayName: overrides.displayName } : {}),
+      ...(overrides?.title !== undefined ? { title: overrides.title } : {}),
+      ...(overrides?.capabilities !== undefined ? { capabilities: overrides.capabilities } : {}),
+      ...(overrides?.budgetMonthlyCents !== undefined ? { budgetMonthlyCents: overrides.budgetMonthlyCents } : {}),
+      ...(overrides?.desiredSkills?.length
+        ? { adapterConfig: { ...template.adapterConfig, paperclipSkillSync: { desiredSkills: overrides.desiredSkills } } }
+        : {}),
+    };
   }
 
   function isManagedAgent(agent: Agent, agentKey: string) {
@@ -2163,10 +2180,10 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           ) ?? null;
           return managedResolution(agentKey, cid, agent, agent ? "resolved" : "missing");
         },
-        async reconcile(agentKey, companyId) {
+        async reconcile(agentKey, companyId, overrides) {
           requireCapability(manifest, capabilitySet, "agents.managed");
           const cid = requireCompanyId(companyId);
-          const declaration = managedAgentDeclaration(agentKey);
+          const declaration = managedAgentDeclaration(agentKey, overrides);
           const existingAgent = [...agents.values()].find((candidate) =>
             candidate.companyId === cid &&
             candidate.status !== "terminated" &&
