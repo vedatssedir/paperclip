@@ -18,6 +18,29 @@ Connects a Paperclip company to one Azure DevOps project:
   `https://dev.azure.com/{org}/{project}/_git/{repo}` URL. Git authenticates against
   `dev.azure.com` / `*.visualstudio.com` with the `AZURE_DEVOPS_PAT` company secret.
 
+## Sync reliability
+
+- Azure requests retry up to 3 times on HTTP 429/503, honoring `Retry-After`.
+- *Max work items per sync* (default 500) caps one sync; ids are fetched in 200-item batches.
+- Incremental sync: with the default WIQL query, syncs after the first add
+  `[System.ChangedDate] >= '<day of last complete sync>'` (WIQL date precision is one day).
+  The watermark only advances when no item was truncated or deferred. Custom queries run as written.
+- **Webhook** – point an Azure DevOps Service Hook (Web Hooks, `Work item created` /
+  `Work item updated`) at the plugin's `work-items` webhook URL. Set *Webhook secret* and
+  send it as the basic auth password or an `X-Paperclip-Webhook-Secret` header. Valid
+  deliveries sync that single work item; invalid ones are rejected.
+
+## Guardrails
+
+- *Allowed repositories*: when set, `repo:` tags outside the list are dropped from the
+  task and noted as not allowed.
+- *Max new tasks per sync* (default 25): further new work items wait for the next sync.
+- *Require triage* (default on): new tasks land in `backlog` unassigned unless the Azure
+  work item is assigned to a member with a developer agent.
+- *Developer agent monthly budget (cents)*: applied when developer agents are created.
+- Actions `pause-all-agents` / `resume-all-agents` pause or resume every developer agent
+  this plugin manages in the company.
+
 ## Setup
 
 1. Create a PAT with Work Items (Read & Write), Project and Team (Read) and Code (Read & Write).

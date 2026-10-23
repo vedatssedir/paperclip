@@ -201,12 +201,13 @@ describeEmbeddedPostgres("plugin-managed agents", () => {
     const jane = await services.agents.managedReconcile({
       companyId,
       agentKey: "developer:jane",
-      overrides: { displayName: "Jane Doe", title: "Developer · Web", desiredSkills: ["paperclip"] },
+      overrides: { displayName: "Jane Doe", title: "Developer · Web", desiredSkills: ["paperclip"], budgetMonthlyCents: 2500 },
     });
     const joe = await services.agents.managedReconcile({ companyId, agentKey: "developer:joe", overrides: { displayName: "Joe" } });
 
     expect(jane.status).toBe("created");
     expect(jane.agent).toMatchObject({ name: "Jane Doe", title: "Developer · Web" });
+    expect(jane.agent?.budgetMonthlyCents).toBe(2500);
     expect(jane.agent?.adapterConfig).toMatchObject({ paperclipSkillSync: { desiredSkills: ["paperclip"] } });
     expect(joe.agentId).not.toBe(jane.agentId);
     await expect(services.agents.managedGet({ companyId, agentKey: "developer:jane" })).resolves.toMatchObject({

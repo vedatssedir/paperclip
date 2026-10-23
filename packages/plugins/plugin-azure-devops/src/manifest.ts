@@ -5,6 +5,7 @@ export const PLUGIN_VERSION = "0.1.0";
 export const ISSUE_ORIGIN_KIND = `plugin:${PLUGIN_ID}` as const;
 export const DEVELOPER_AGENT_KEY = "developer";
 export const SYNC_JOB_KEY = "board-sync";
+export const WORK_ITEM_WEBHOOK_KEY = "work-items";
 
 const manifest: PaperclipPluginManifestV1 = {
   id: PLUGIN_ID,
@@ -31,6 +32,9 @@ const manifest: PaperclipPluginManifestV1 = {
     "plugin.state.write",
     "activity.log.write",
     "instance.settings.register",
+    "webhooks.receive",
+    "agents.pause",
+    "agents.resume",
   ],
   entrypoints: {
     worker: "./dist/worker.js",
@@ -100,6 +104,43 @@ const manifest: PaperclipPluginManifestV1 = {
         items: { type: "string" },
         default: [],
       },
+      webhookSecret: {
+        type: "string",
+        format: "secret-ref",
+        title: "Webhook secret",
+        description: "Shared secret for Azure DevOps Service Hooks (work item created/updated). Send it as the basic auth password or an X-Paperclip-Webhook-Secret header.",
+      },
+      allowedRepositories: {
+        type: "array",
+        title: "Allowed repositories",
+        description: "Azure Repos names agents may work on. When set, other repo: tags are dropped from tasks.",
+        items: { type: "string" },
+        default: [],
+      },
+      maxWorkItemsPerSync: {
+        type: "number",
+        title: "Max work items per sync",
+        minimum: 1,
+        default: 500,
+      },
+      maxNewTasksPerSync: {
+        type: "number",
+        title: "Max new tasks per sync",
+        minimum: 1,
+        default: 25,
+      },
+      agentMonthlyBudgetCents: {
+        type: "number",
+        title: "Developer agent monthly budget (cents)",
+        description: "Applied when a developer agent is created. Empty keeps the declaration default.",
+        minimum: 0,
+      },
+      requireTriage: {
+        type: "boolean",
+        title: "Require triage",
+        description: "New tasks without an Azure assignee land in backlog unassigned.",
+        default: true,
+      },
     },
   },
   jobs: [
@@ -108,6 +149,13 @@ const manifest: PaperclipPluginManifestV1 = {
       displayName: "Azure Boards sync",
       description: "Runs every minute and syncs each company whose configured interval has elapsed.",
       schedule: "* * * * *",
+    },
+  ],
+  webhooks: [
+    {
+      endpointKey: WORK_ITEM_WEBHOOK_KEY,
+      displayName: "Azure Boards work items",
+      description: "Azure DevOps Service Hooks target for workitem.created and workitem.updated events.",
     },
   ],
   agents: [

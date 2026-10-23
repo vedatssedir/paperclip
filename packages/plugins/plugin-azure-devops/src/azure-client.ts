@@ -3,6 +3,8 @@
  * provisioning need. Authenticates with a PAT over HTTP Basic auth.
  */
 
+import { fetchWithRetry } from "./sync-guards.js";
+
 export const AZURE_API_VERSION = "7.1";
 
 export interface AzureWorkItem {
@@ -38,22 +40,33 @@ export const WORK_ITEM_FIELDS = [
   "Microsoft.VSTS.TCM.ReproSteps",
 ];
 
-export function createAzureClient(options: { organizationUrl: string; project: string; pat: string; fetch: Fetch }) {
+export function createAzureClient(options: {
+  organizationUrl: string;
+  project: string;
+  pat: string;
+  fetch: Fetch;
+  sleep?: (ms: number) => Promise<void>;
+}) {
   const base = options.organizationUrl.replace(/\/+$/, "");
   const project = encodeURIComponent(options.project);
   const authorization = `Basic ${Buffer.from(`:${options.pat}`).toString("base64")}`;
 
   async function request<T>(path: string, init: { method?: string; body?: unknown; contentType?: string; apiVersion?: string } = {}): Promise<T> {
     const separator = path.includes("?") ? "&" : "?";
-    const response = await options.fetch(`${base}${path}${separator}api-version=${init.apiVersion ?? AZURE_API_VERSION}`, {
-      method: init.method ?? "GET",
-      headers: {
-        Authorization: authorization,
-        Accept: "application/json",
-        ...(init.body !== undefined ? { "Content-Type": init.contentType ?? "application/json" } : {}),
-      },
-      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-    });
+    const url = `${base}${path}${separator}api-version=${init.apiVersion ?? AZURE_API_VERSION}`;
+    const response = await fetchWithRetry(
+      () =>
+        options.fetch(url, {
+          method: init.method ?? "GET",
+          headers: {
+            Authorization: authorization,
+            Accept: "application/json",
+            ...(init.body !== undefined ? { "Content-Type": init.contentType ?? "application/json" } : {}),
+          },
+          body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+        }),
+      options.sleep,
+    );
     if (!response.ok) {
       // Provider error bodies can echo request details; report status only.
       throw new Error(`Azure DevOps request failed: ${init.method ?? "GET"} ${path.split("?")[0]} → HTTP ${response.status}`);
@@ -62,9 +75,11 @@ export function createAzureClient(options: { organizationUrl: string; project: s
   }
 
   return {
-    async queryWorkItemIds(wiql: string, team?: string): Promise<number[]> {
+    /** Returns at most `limit` ids (WIQL itself caps results at 20000). */
+    async queryWorkItemIds(wiql: string, team?: string, limit = 500): Promise<number[]> {
       const scope = team ? `/${project}/${encodeURIComponent(team)}` : `/${project}`;
-      const result = await request<{ workItems?: Array<{ id: number }> }>(`${scope}/_apis/wit/wiql?$top=200`, {
+      const top = Math.max(1, Math.min(Math.floor(limit), 20000));
+      const result = await request<{ workItems?: Array<{ id: number }> }>(`${scope}/_apis/wit/wiql?$top=${top}`, {
         method: "POST",
         body: { query: wiql },
       });

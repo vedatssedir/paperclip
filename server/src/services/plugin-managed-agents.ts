@@ -208,6 +208,11 @@ export function pluginManagedAgentService(
       ...(overrides?.displayName ? { displayName: overrides.displayName } : {}),
       ...(overrides?.title !== undefined ? { title: overrides.title } : {}),
       ...(overrides?.capabilities !== undefined ? { capabilities: overrides.capabilities } : {}),
+      ...(typeof overrides?.budgetMonthlyCents === "number"
+        && Number.isInteger(overrides.budgetMonthlyCents)
+        && overrides.budgetMonthlyCents >= 0
+        ? { budgetMonthlyCents: overrides.budgetMonthlyCents }
+        : {}),
       ...(overrides?.desiredSkills?.length ? {
         adapterConfig: {
           ...template.adapterConfig,

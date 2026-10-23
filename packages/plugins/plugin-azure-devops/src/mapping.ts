@@ -16,6 +16,23 @@ export interface AzureSettings {
   inProgressState: string;
   doneState: string;
   defaultAgentSkills: string[];
+  webhookSecret: unknown;
+  allowedRepositories: string[];
+  maxWorkItemsPerSync: number;
+  maxNewTasksPerSync: number;
+  agentMonthlyBudgetCents: number | null;
+  requireTriage: boolean;
+}
+
+function positiveInt(value: unknown, fallback: number): number {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 1 ? number : fallback;
+}
+
+function budgetCents(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 0 ? number : null;
 }
 
 export const DEFAULT_WORK_ITEM_QUERY =
@@ -49,6 +66,12 @@ export function parseSettings(config: Record<string, unknown>): AzureSettings | 
     inProgressState: text(config.inProgressState) || "Active",
     doneState: text(config.doneState) || "Closed",
     defaultAgentSkills: stringList(config.defaultAgentSkills),
+    webhookSecret: config.webhookSecret || null,
+    allowedRepositories: stringList(config.allowedRepositories),
+    maxWorkItemsPerSync: positiveInt(config.maxWorkItemsPerSync, 500),
+    maxNewTasksPerSync: positiveInt(config.maxNewTasksPerSync, 25),
+    agentMonthlyBudgetCents: budgetCents(config.agentMonthlyBudgetCents),
+    requireTriage: config.requireTriage !== false,
   };
 }
 
@@ -134,8 +157,14 @@ export function issueTitle(item: AzureWorkItem): string {
   return `[AB#${item.id}] ${text(item.fields["System.Title"]) || "Untitled work item"}`;
 }
 
-export function issueDescription(item: AzureWorkItem, input: { webUrl: string; organizationUrl: string; project: string }): string {
-  const repos = repositoriesFromTags(item.fields["System.Tags"]);
+export function issueDescription(
+  item: AzureWorkItem,
+  input: { webUrl: string; organizationUrl: string; project: string; allowedRepositories?: string[] },
+): string {
+  const tagged = repositoriesFromTags(item.fields["System.Tags"]);
+  const allow = new Set((input.allowedRepositories ?? []).map((repo) => repo.toLowerCase()));
+  const repos = allow.size === 0 ? tagged : tagged.filter((repo) => allow.has(repo.toLowerCase()));
+  const rejected = tagged.filter((repo) => !repos.includes(repo));
   const body = htmlToText(text(item.fields["System.Description"]) || text(item.fields["Microsoft.VSTS.TCM.ReproSteps"]));
   const base = input.organizationUrl.replace(/\/+$/, "");
   const lines = [
@@ -148,6 +177,9 @@ export function issueDescription(item: AzureWorkItem, input: { webUrl: string; o
       lines.push(`- ${repo}: ${base}/${encodeURIComponent(input.project)}/_git/${encodeURIComponent(repo)}`);
     }
     lines.push("");
+  }
+  if (rejected.length > 0) {
+    lines.push(`Repositories not allowed by plugin settings (ignored): ${rejected.join(", ")}`, "");
   }
   lines.push("## Description", "", body || "_No description._");
   return lines.join("\n");

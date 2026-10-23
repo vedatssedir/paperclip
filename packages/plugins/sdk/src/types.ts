@@ -1732,6 +1732,8 @@ export interface PluginManagedAgentOverrides {
   capabilities?: string | null;
   /** Company skill keys assigned when the agent is first created. */
   desiredSkills?: string[];
+  /** Monthly budget in cents applied when the agent is first created (non-negative integer). */
+  budgetMonthlyCents?: number;
 }
 
 export interface PluginAgentsClient {
