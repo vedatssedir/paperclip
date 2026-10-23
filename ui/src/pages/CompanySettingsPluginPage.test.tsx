@@ -32,6 +32,12 @@ vi.mock("@/lib/router", () => ({
   useParams: () => mockParams,
 }));
 
+vi.mock("@/components/CompanyPluginConfigSection", () => ({
+  CompanyPluginConfigSection: ({ pluginId, companyId }: { pluginId: string; companyId: string }) => (
+    <div data-testid="plugin-config-section">{pluginId}:{companyId}</div>
+  ),
+}));
+
 vi.mock("@/plugins/slots", () => ({
   usePluginSlots: mockUsePluginSlots,
   PluginSlotMount: ({
@@ -112,6 +118,9 @@ describe("CompanySettingsPluginPage", () => {
 
     expect(container.querySelector('[data-testid="plugin-slot-mount"]')?.textContent).toBe(
       "Permissions:company-1:PAP",
+    );
+    expect(container.querySelector('[data-testid="plugin-config-section"]')?.textContent).toBe(
+      "plugin-1:company-1",
     );
     expect(mockSetBreadcrumbs).toHaveBeenCalledWith([
       { label: "Settings", href: "/company/settings" },

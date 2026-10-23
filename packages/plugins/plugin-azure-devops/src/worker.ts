@@ -13,6 +13,7 @@ import {
   priorityForAzure,
   type AzureSettings,
 } from "./mapping.js";
+import { registerPullRequestFeatures } from "./pull-requests.js";
 
 const SYNC_STATUS_KEY = "sync-status";
 const AGENT_STATUS_KEY = "agent-sync-status";
@@ -198,6 +199,8 @@ function companyIdParam(params: Record<string, unknown>) {
 
 const plugin = definePlugin({
   async setup(ctx) {
+    registerPullRequestFeatures(ctx);
+
     ctx.jobs.register(SYNC_JOB_KEY, async (job) => {
       const now = new Date();
       for (const company of await ctx.companies.list()) {

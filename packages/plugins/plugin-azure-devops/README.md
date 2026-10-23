@@ -35,3 +35,16 @@ Connects a Paperclip company to one Azure DevOps project:
 5. Use **Company settings → Azure DevOps** to sync agents and the board.
 
 No CEO agent is needed: companies can run with only these developer agents.
+
+## Pull requests and connection test
+
+- The configuration form is shown on the company settings **Azure DevOps** page
+  (and still on the instance plugin settings page). Use **Test connection** there
+  to check the PAT, project access, teams and repositories.
+- Developer agents open PRs with the `azure_create_pull_request` tool
+  (`issueId`, `repository`, `sourceBranch`, optional `targetBranch`/`title`/`description`).
+  The PR targets the repository default branch by default, is linked to the
+  task's work item, and its URL is commented on the task. PRs from the default
+  branch are refused.
+- The `pr-status` job (every 5 minutes) marks the task `done` once its PR is
+  completed, and comments when a PR is abandoned.

@@ -1,7 +1,9 @@
+import { useState } from "react";
 import {
   ActionBar,
   KeyValueList,
   Spinner,
+  usePluginAction,
   usePluginData,
   usePluginToast,
   type PluginCompanySettingsPageProps,
@@ -15,6 +17,57 @@ interface StatusData {
   agents: { syncedAt: string; teams: string[]; agents: Array<{ uniqueName: string; status: string }> } | null;
 }
 
+interface ConnectionTestResult {
+  ok: boolean;
+  checks: Array<{ name: string; ok: boolean; detail: string }>;
+  project: { id: string; name: string } | null;
+  teams: Array<{ id: string; name: string }>;
+  repositories: Array<{ id: string; name: string; defaultBranch: string | null }>;
+}
+
+function ConnectionTest({ companyId }: { companyId: string }) {
+  const testConnection = usePluginAction("test-connection");
+  const [result, setResult] = useState<ConnectionTestResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+
+  async function run() {
+    setRunning(true);
+    setError(null);
+    try {
+      setResult((await testConnection({ companyId })) as ConnectionTestResult);
+    } catch (caught) {
+      setResult(null);
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <section aria-label="Connection test" style={{ display: "grid", gap: "0.5rem" }}>
+      <div>
+        <button type="button" onClick={run} disabled={running}>
+          {running ? "Testing connection..." : "Test connection"}
+        </button>
+      </div>
+      {error ? <p role="alert">{error}</p> : null}
+      {result ? (
+        <KeyValueList
+          pairs={[
+            { label: "Result", value: result.ok ? "Connection OK" : "Connection failed" },
+            ...result.checks.map((check) => ({ label: check.name, value: `${check.ok ? "OK" : "Failed"} · ${check.detail}` })),
+            ...(result.teams.length ? [{ label: "Teams found", value: result.teams.map((team) => team.name).join(", ") }] : []),
+            ...(result.repositories.length
+              ? [{ label: "Repositories found", value: result.repositories.map((repo) => repo.name).join(", ") }]
+              : []),
+          ]}
+        />
+      ) : null}
+    </section>
+  );
+}
+
 export function AzureDevOpsSettingsPage({ context }: PluginCompanySettingsPageProps) {
   const companyId = context.companyId;
   const status = usePluginData<StatusData>("status", companyId ? { companyId } : {});
@@ -26,7 +79,7 @@ export function AzureDevOpsSettingsPage({ context }: PluginCompanySettingsPagePr
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
       <p>
-        Set the organization URL, project, personal access token and teams in this plugin's settings form.
+        Set the organization URL, project, personal access token and teams in the configuration form above, save, then test the connection.
         Add the same token as the <code>AZURE_DEVOPS_PAT</code> company secret so agents can clone Azure Repos.
       </p>
       {status.error ? <p role="alert">{status.error.message}</p> : null}
@@ -39,6 +92,7 @@ export function AzureDevOpsSettingsPage({ context }: PluginCompanySettingsPagePr
           { label: "Developer agents", value: data?.agents ? `${data.agents.agents.length} (${data.agents.teams.join(", ")})` : "Not synced" },
         ]}
       />
+      <ConnectionTest companyId={companyId} />
       <ActionBar
         actions={[
           { label: "Sync board now", actionKey: "sync-now", params: { companyId } },
