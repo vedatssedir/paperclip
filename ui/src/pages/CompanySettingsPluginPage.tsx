@@ -3,6 +3,7 @@ import { useParams } from "@/lib/router";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { PluginSlotMount, usePluginSlots } from "@/plugins/slots";
+import { CompanyPluginConfigSection } from "@/components/CompanyPluginConfigSection";
 import { NotFoundPage } from "./NotFound";
 
 export function CompanySettingsPluginPage() {
@@ -78,7 +79,8 @@ export function CompanySettingsPluginPage() {
   }
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-6xl space-y-6">
+      <CompanyPluginConfigSection pluginId={pageSlot.pluginId} companyId={resolvedCompanyId} />
       <PluginSlotMount
         slot={pageSlot}
         context={{ companyId: resolvedCompanyId, companyPrefix }}

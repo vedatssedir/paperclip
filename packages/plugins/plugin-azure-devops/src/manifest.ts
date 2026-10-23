@@ -6,6 +6,8 @@ export const ISSUE_ORIGIN_KIND = `plugin:${PLUGIN_ID}` as const;
 export const DEVELOPER_AGENT_KEY = "developer";
 export const SYNC_JOB_KEY = "board-sync";
 export const WORK_ITEM_WEBHOOK_KEY = "work-items";
+export const PR_STATUS_JOB_KEY = "pr-status";
+export const CREATE_PR_TOOL_NAME = "azure_create_pull_request";
 
 const manifest: PaperclipPluginManifestV1 = {
   id: PLUGIN_ID,
@@ -35,6 +37,7 @@ const manifest: PaperclipPluginManifestV1 = {
     "webhooks.receive",
     "agents.pause",
     "agents.resume",
+    "agent.tools.register",
   ],
   entrypoints: {
     worker: "./dist/worker.js",
@@ -150,6 +153,32 @@ const manifest: PaperclipPluginManifestV1 = {
       description: "Runs every minute and syncs each company whose configured interval has elapsed.",
       schedule: "* * * * *",
     },
+    {
+      jobKey: PR_STATUS_JOB_KEY,
+      displayName: "Azure pull request status",
+      description: "Marks Paperclip tasks done when their Azure Repos pull request is completed.",
+      schedule: "*/5 * * * *",
+    },
+  ],
+  tools: [
+    {
+      name: CREATE_PR_TOOL_NAME,
+      displayName: "Create Azure pull request",
+      description:
+        "Open an Azure Repos pull request for your current Paperclip task from a pushed feature branch. Links the PR to the task's Azure work item and comments the PR URL on the task. The task is marked done when the PR is merged.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          issueId: { type: "string", description: "Paperclip task (issue) id you are working on." },
+          repository: { type: "string", description: "Azure Repos repository name or id." },
+          sourceBranch: { type: "string", description: "Pushed feature branch containing your commits." },
+          targetBranch: { type: "string", description: "Optional. Defaults to the repository default branch." },
+          title: { type: "string", description: "Optional PR title. Defaults to the task identifier and title." },
+          description: { type: "string", description: "Optional PR description summarizing the change." },
+        },
+        required: ["issueId", "repository", "sourceBranch"],
+      },
+    },
   ],
   webhooks: [
     {
@@ -180,8 +209,9 @@ const manifest: PaperclipPluginManifestV1 = {
           "",
           "- The task description links the Azure work item and lists the repositories to change.",
           "- Work in the task workspace checkouts. Azure Repos authenticate through the company AZURE_DEVOPS_PAT secret.",
-          "- Commit on a branch named after the task, push it, and summarize the change in a task comment.",
-          "- Move the task to in_review when the change is pushed. Paperclip syncs the status back to Azure.",
+          "- Never commit or push to the repository default branch (main/master). Always commit on a branch named after the task and push that branch.",
+          "- After pushing, open a pull request with the `azure_create_pull_request` tool (pass the task id, repository and your branch). It links the PR to the Azure work item and comments the PR URL on the task.",
+          "- Summarize the change in a task comment and move the task to in_review. The task is marked done automatically when the PR is merged.",
           "",
         ].join("\n"),
       },
