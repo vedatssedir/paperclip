@@ -1,6 +1,6 @@
 import type { PluginWorkspaceParams, PluginWorkspaceResult } from "./workspace-provider.js";
 import type { PluginEnvironmentTaskParams, PluginEnvironmentTaskResult } from "./environment-tasks.js";
-import type { PluginAgentRuntimeState } from "./types.js";
+import type { PluginAgentRuntimeState, PluginManagedAgentOverrides } from "./types.js";
 import type { AgentLifecycleRequest, AgentLifecycleResult } from "@paperclipai/shared";
 import type { AiConnectionRouterRequest, AiConnectionRouterResult } from "@paperclipai/shared";
 /**
@@ -2173,7 +2173,7 @@ export interface WorkerToHostMethods {
     result: PluginManagedAgentResolution,
   ];
   "agents.managed.reconcile": [
-    params: { agentKey: string; companyId: string },
+    params: { agentKey: string; companyId: string; overrides?: PluginManagedAgentOverrides },
     result: PluginManagedAgentResolution,
   ];
   "agents.managed.reset": [

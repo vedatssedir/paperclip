@@ -193,6 +193,29 @@ describeEmbeddedPostgres("plugin-managed agents", () => {
     });
   });
 
+  it("provisions one agent per instance key from a multiInstance declaration", async () => {
+    const pluginManifest = manifest();
+    pluginManifest.agents = [{ ...pluginManifest.agents![0]!, agentKey: "developer", multiInstance: true }];
+    const { companyId, services } = await seedCompanyAndPlugin({ manifest: pluginManifest });
+
+    const jane = await services.agents.managedReconcile({
+      companyId,
+      agentKey: "developer:jane",
+      overrides: { displayName: "Jane Doe", title: "Developer · Web", desiredSkills: ["paperclip"] },
+    });
+    const joe = await services.agents.managedReconcile({ companyId, agentKey: "developer:joe", overrides: { displayName: "Joe" } });
+
+    expect(jane.status).toBe("created");
+    expect(jane.agent).toMatchObject({ name: "Jane Doe", title: "Developer · Web" });
+    expect(jane.agent?.adapterConfig).toMatchObject({ paperclipSkillSync: { desiredSkills: ["paperclip"] } });
+    expect(joe.agentId).not.toBe(jane.agentId);
+    await expect(services.agents.managedGet({ companyId, agentKey: "developer:jane" })).resolves.toMatchObject({
+      status: "resolved",
+      agentId: jane.agentId,
+    });
+    await expect(services.agents.managedReconcile({ companyId, agentKey: "other:jane" })).rejects.toThrow(/not found/);
+  });
+
   it("preserves user edits during reconcile and resets only on explicit reset", async () => {
     const { companyId, services } = await seedCompanyAndPlugin();
     const created = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });

@@ -3068,7 +3068,7 @@ export function buildHostServices(
       async managedReconcile(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return managedAgents.reconcile(params.agentKey, companyId);
+        return managedAgents.reconcile(params.agentKey, companyId, params.overrides);
       },
       async managedReset(params) {
         const companyId = ensureCompanyId(params.companyId);

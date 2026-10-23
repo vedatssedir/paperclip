@@ -279,6 +279,12 @@ export interface PluginManagedAgentDeclaration {
   agentKey: string;
   /** Suggested visible agent name. */
   displayName: string;
+  /**
+   * When true, this declaration is a template: the plugin may reconcile any
+   * number of agents under `${agentKey}:${instanceKey}` keys, each with its own
+   * display name/title overrides (for example one agent per external team member).
+   */
+  multiInstance?: boolean;
   /** Optional suggested role. Defaults to `general`. */
   role?: AgentRole | string;
   /** Optional suggested title shown in agent surfaces. */

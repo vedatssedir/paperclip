@@ -272,6 +272,7 @@ export type {
   PluginIssueSubtree,
   PluginIssueSummariesClient,
   PluginAgentsClient,
+  PluginManagedAgentOverrides,
   PluginAgentRuntimeState,
   PluginAgentConnectionAssignments,
   PluginAgentRuntimeSkill,

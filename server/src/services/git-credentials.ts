@@ -28,6 +28,9 @@ import { toolAccessService } from "./tool-access.js";
 /** Company-secret names probed for a GitHub token, in priority order. */
 export const DEFAULT_GITHUB_TOKEN_SECRET_NAMES = ["GITHUB_TOKEN", "GH_TOKEN", "PAPERCLIP_GITHUB_TOKEN"] as const;
 
+/** Company-secret names probed for an Azure DevOps PAT, in priority order. */
+export const DEFAULT_AZURE_DEVOPS_TOKEN_SECRET_NAMES = ["AZURE_DEVOPS_PAT", "AZURE_DEVOPS_TOKEN"] as const;
+
 /** Env var the credential helper reads the token from; never appears in argv. */
 export const GIT_CREDENTIAL_TOKEN_ENV_KEY = "PAPERCLIP_GIT_TOKEN";
 
@@ -43,6 +46,52 @@ export const GIT_CREDENTIAL_TOKEN_ENV_KEY = "PAPERCLIP_GIT_TOKEN";
 // so git does not consult it for other hosts in the first place — two independent gates.
 const GIT_CREDENTIAL_HELPER =
   `!f() { ok=; proto=; while IFS= read -r l && [ -n "$l" ]; do case "$l" in host=github.com|host=www.github.com) ok=1;; protocol=https) proto=1;; esac; done; if [ "$1" = get ] && [ -n "$ok" ] && [ -n "$proto" ]; then printf 'username=x-access-token\\npassword=%s\\n' "$PAPERCLIP_GIT_TOKEN"; fi; }; f`;
+
+// Same shape as the GitHub helper, but answers only for one Azure DevOps host. Azure Repos
+// accepts a PAT as the password with any non-empty username.
+function azureDevOpsCredentialHelper(host: string) {
+  return `!f() { ok=; proto=; while IFS= read -r l && [ -n "$l" ]; do case "$l" in host=${host}) ok=1;; protocol=https) proto=1;; esac; done; if [ "$1" = get ] && [ -n "$ok" ] && [ -n "$proto" ]; then printf 'username=paperclip\\npassword=%s\\n' "$PAPERCLIP_GIT_TOKEN"; fi; }; f`;
+}
+
+/**
+ * Host of an `https://dev.azure.com/...` or `https://{org}.visualstudio.com/...` remote
+ * without inline userinfo; null for anything else.
+ */
+export function azureDevOpsHttpsRemoteHost(remoteUrl: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(remoteUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port) return null;
+  const host = parsed.hostname.toLowerCase();
+  if (host === "dev.azure.com" || /^[a-z0-9][a-z0-9-]*\.visualstudio\.com$/.test(host)) return host;
+  return null;
+}
+
+export function buildAzureDevOpsGitAuthInvocation(credential: GitCredential, host: string): GitAuthInvocation {
+  const helper = azureDevOpsCredentialHelper(host);
+  const configEntries = [
+    ["credential.helper", ""],
+    [`credential.https://${host}.helper`, helper],
+  ];
+  return {
+    configArgs: ["-c", "credential.helper=", "-c", `credential.https://${host}.helper=${helper}`],
+    env: {
+      [GIT_CREDENTIAL_TOKEN_ENV_KEY]: credential.token,
+      AZURE_DEVOPS_EXT_PAT: credential.token,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_CONFIG_COUNT: String(configEntries.length),
+      ...Object.fromEntries(configEntries.flatMap(([key, value], index) => [
+        [`GIT_CONFIG_KEY_${index}`, key],
+        [`GIT_CONFIG_VALUE_${index}`, value],
+      ])),
+    },
+    source: credential.source,
+    secretName: credential.secretName,
+  };
+}
 
 export type GitCredential = {
   token: string;
@@ -226,6 +275,36 @@ export function createGitRemoteAuthProvider(
   const env = deps?.env ?? process.env;
   const secretNames = deps?.secretNames ?? DEFAULT_GITHUB_TOKEN_SECRET_NAMES;
   let credentialPromise: Promise<GitCredential | null> | null = null;
+  let azureCredentialPromise: Promise<GitCredential | null> | null = null;
+
+  const resolveCompanySecretToken = async (secretName: string) => {
+    const secret = await Promise.resolve(secrets.getByName(companyId, secretName)).catch(() => null);
+    if (!secret) return "";
+    // A resolution failure (inactive secret, provider outage) records its own failure audit
+    // event; fall through to the next source instead of failing the whole git operation here.
+    return secrets
+      .resolveSecretValue(companyId, secret.id, "latest", {
+        accessContext: {
+          consumerType: "system",
+          consumerId: "workspace-git-credential",
+          actorType: "system",
+          issueId: context?.issueId ?? null,
+          heartbeatRunId: context?.heartbeatRunId ?? null,
+          responsibleUserId: context?.responsibleUserId ?? null,
+        },
+      })
+      .then((value) => value.trim())
+      .catch(() => "");
+  };
+
+  const resolveAzureDevOpsCredential = async (): Promise<GitCredential | null> => {
+    for (const secretName of DEFAULT_AZURE_DEVOPS_TOKEN_SECRET_NAMES) {
+      const token = await resolveCompanySecretToken(secretName);
+      if (token) return { token, source: "company_secret", secretName };
+    }
+    const envToken = env.AZURE_DEVOPS_PAT?.trim() || "";
+    return envToken ? { token: envToken, source: "server_env", secretName: null } : null;
+  };
 
   const resolveCredential = async (): Promise<GitCredential | null> => {
     // Unit callers historically pass a null DB through the typed test seam. Production
@@ -239,23 +318,7 @@ export function createGitRemoteAuthProvider(
       return managed.credential;
     }
     for (const secretName of secretNames) {
-      const secret = await Promise.resolve(secrets.getByName(companyId, secretName)).catch(() => null);
-      if (!secret) continue;
-      // A resolution failure (inactive secret, provider outage) records its own failure audit
-      // event; fall through to the next source instead of failing the whole git operation here.
-      const token = await secrets
-        .resolveSecretValue(companyId, secret.id, "latest", {
-          accessContext: {
-            consumerType: "system",
-            consumerId: "workspace-git-credential",
-            actorType: "system",
-            issueId: context?.issueId ?? null,
-            heartbeatRunId: context?.heartbeatRunId ?? null,
-            responsibleUserId: context?.responsibleUserId ?? null,
-          },
-        })
-        .then((value) => value.trim())
-        .catch(() => "");
+      const token = await resolveCompanySecretToken(secretName);
       if (token) return { token, source: "company_secret", secretName };
     }
     const envToken = env.GITHUB_TOKEN?.trim() || env.GH_TOKEN?.trim() || "";
@@ -264,6 +327,12 @@ export function createGitRemoteAuthProvider(
   };
 
   return async (remoteUrl: string) => {
+    const azureHost = azureDevOpsHttpsRemoteHost(remoteUrl);
+    if (azureHost) {
+      azureCredentialPromise ??= resolveAzureDevOpsCredential();
+      const credential = await azureCredentialPromise;
+      return credential ? buildAzureDevOpsGitAuthInvocation(credential, azureHost) : null;
+    }
     if (!isSupportedGitHubRemoteUrl(remoteUrl)) return null;
     if (db && context?.heartbeatRunId && context.agentId) {
       const [run] = await db.select({ contextId: heartbeatRuns.activeIdentityContextId }).from(heartbeatRuns).where(and(

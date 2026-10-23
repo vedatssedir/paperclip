@@ -43,7 +43,7 @@ import { createPluginIdleDrain } from "./idle-drain.js";
  * @see PLUGIN_SPEC.md §14 — SDK Surface
  */
 
-import type { ResourceLifecycleEvent } from "./types.js";
+import type { PluginManagedAgentOverrides, ResourceLifecycleEvent } from "./types.js";
 import fs from "node:fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
@@ -1196,8 +1196,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
             return callHost("agents.managed.get", { agentKey, companyId });
           },
 
-          async reconcile(agentKey: string, companyId: string) {
-            return callHost("agents.managed.reconcile", { agentKey, companyId });
+          async reconcile(agentKey: string, companyId: string, overrides?: PluginManagedAgentOverrides) {
+            return callHost("agents.managed.reconcile", { agentKey, companyId, ...(overrides ? { overrides } : {}) });
           },
 
           async reset(agentKey: string, companyId: string) {

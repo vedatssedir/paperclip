@@ -1725,6 +1725,15 @@ export interface PluginAgentRuntimeState {
   instanceSecrets: Record<string, string>;
 }
 
+/** Per-instance overrides for `multiInstance` managed agent declarations. */
+export interface PluginManagedAgentOverrides {
+  displayName?: string;
+  title?: string | null;
+  capabilities?: string | null;
+  /** Company skill keys assigned when the agent is first created. */
+  desiredSkills?: string[];
+}
+
 export interface PluginAgentsClient {
   getRuntime(agentId: string, companyId: string): Promise<PluginAgentRuntimeState | null>;
   list(input: { companyId: string; status?: Agent["status"]; limit?: number; offset?: number }): Promise<Agent[]>;
@@ -1738,7 +1747,11 @@ export interface PluginAgentsClient {
   /** Resolve and reconcile manifest-declared plugin-managed agents by stable key. Requires `agents.managed`. */
   managed: {
     get(agentKey: string, companyId: string): Promise<PluginManagedAgentResolution>;
-    reconcile(agentKey: string, companyId: string): Promise<PluginManagedAgentResolution>;
+    /**
+     * For a `multiInstance` declaration, pass `${agentKey}:${instanceKey}` and
+     * optional overrides to provision one agent per instance.
+     */
+    reconcile(agentKey: string, companyId: string, overrides?: PluginManagedAgentOverrides): Promise<PluginManagedAgentResolution>;
     reset(agentKey: string, companyId: string): Promise<PluginManagedAgentResolution>;
   };
   /** Create, message, and close agent chat sessions. Requires `agent.sessions.*` capabilities. */

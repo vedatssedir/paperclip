@@ -7,6 +7,8 @@ import type { Db } from "@paperclipai/db";
 import {
   DEFAULT_GITHUB_TOKEN_SECRET_NAMES,
   GIT_CREDENTIAL_TOKEN_ENV_KEY,
+  azureDevOpsHttpsRemoteHost,
+  buildAzureDevOpsGitAuthInvocation,
   buildGitAuthInvocation,
   createGitRemoteAuthProvider,
   describeGitAuthFailure,
@@ -276,6 +278,47 @@ describe("credential helper execution (real git, no network)", () => {
     const result = await runCredentialFill("protocol=http\nhost=github.com\n\n");
     expect(result.code).not.toBe(0);
     expect(result.stdout).not.toContain("abc123");
+  });
+});
+
+describe("Azure DevOps remotes", () => {
+  it("recognizes dev.azure.com and visualstudio.com https remotes only", () => {
+    expect(azureDevOpsHttpsRemoteHost("https://dev.azure.com/acme/Shop/_git/api")).toBe("dev.azure.com");
+    expect(azureDevOpsHttpsRemoteHost("https://acme.visualstudio.com/Shop/_git/api")).toBe("acme.visualstudio.com");
+    expect(azureDevOpsHttpsRemoteHost("https://acme@dev.azure.com/acme/Shop/_git/api")).toBeNull();
+    expect(azureDevOpsHttpsRemoteHost("http://dev.azure.com/acme/Shop/_git/api")).toBeNull();
+    expect(azureDevOpsHttpsRemoteHost("https://dev.azure.com.evil.example/acme/_git/api")).toBeNull();
+  });
+
+  it("uses the AZURE_DEVOPS_PAT company secret and never the GitHub token", async () => {
+    const secrets = buildSecretsFake({ GITHUB_TOKEN: "gh", AZURE_DEVOPS_PAT: "azure-pat" });
+    const provider = createGitRemoteAuthProvider(fakeDb, "company-1", undefined, { secrets, env: {} });
+    const invocation = await provider("https://dev.azure.com/acme/Shop/_git/api");
+    expect(invocation?.env[GIT_CREDENTIAL_TOKEN_ENV_KEY]).toBe("azure-pat");
+    expect(invocation?.secretName).toBe("AZURE_DEVOPS_PAT");
+    expect(invocation?.configArgs.join(" ")).not.toContain("azure-pat");
+    expect(secrets.getByName).not.toHaveBeenCalledWith("company-1", "GITHUB_TOKEN");
+  });
+
+  it("answers only its own Azure host from real git", async () => {
+    const invocation = buildAzureDevOpsGitAuthInvocation({ token: "pat123", source: "company_secret", secretName: "AZURE_DEVOPS_PAT" }, "dev.azure.com");
+    const fill = (description: string) => new Promise<{ code: number | null; stdout: string }>((resolve, reject) => {
+      const child = spawn("git", [...invocation.configArgs, "credential", "fill"], {
+        cwd: os.tmpdir(),
+        env: { ...process.env, ...invocation.env },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      let stdout = "";
+      child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+      child.on("error", reject);
+      child.on("close", (code) => resolve({ code, stdout }));
+      child.stdin.end(description);
+    });
+    const ok = await fill("protocol=https\nhost=dev.azure.com\n\n");
+    expect(ok.code).toBe(0);
+    expect(ok.stdout).toContain("password=pat123");
+    const other = await fill("protocol=https\nhost=github.com\n\n");
+    expect(other.stdout).not.toContain("pat123");
   });
 });
 

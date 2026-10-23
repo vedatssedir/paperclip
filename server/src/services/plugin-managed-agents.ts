@@ -1,3 +1,4 @@
+import type { PluginManagedAgentOverrides } from "@paperclipai/plugin-sdk";
 import { createAgentLifecycle } from "./agent-lifecycle.js";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -189,12 +190,31 @@ export function pluginManagedAgentService(
   const approvalSvc = approvalService(db);
   const instructions = agentInstructionsService(db);
 
-  function declarationFor(agentKey: string) {
-    const declaration = options.manifest?.agents?.find((agent) => agent.agentKey === agentKey);
-    if (!declaration) {
+  function declarationFor(agentKey: string, overrides?: PluginManagedAgentOverrides): PluginManagedAgentDeclaration {
+    const declarations = options.manifest?.agents ?? [];
+    const exact = declarations.find((agent) => agent.agentKey === agentKey);
+    if (exact) return exact;
+    // `multiInstance` templates provision one agent per `${template}:${instance}` key.
+    const separator = agentKey.lastIndexOf(":");
+    const template = separator > 0
+      ? declarations.find((agent) => agent.multiInstance && agent.agentKey === agentKey.slice(0, separator))
+      : undefined;
+    if (!template) {
       throw notFound(`Managed agent declaration not found: ${agentKey}`);
     }
-    return declaration;
+    return {
+      ...template,
+      agentKey,
+      ...(overrides?.displayName ? { displayName: overrides.displayName } : {}),
+      ...(overrides?.title !== undefined ? { title: overrides.title } : {}),
+      ...(overrides?.capabilities !== undefined ? { capabilities: overrides.capabilities } : {}),
+      ...(overrides?.desiredSkills?.length ? {
+        adapterConfig: {
+          ...template.adapterConfig,
+          paperclipSkillSync: { desiredSkills: overrides.desiredSkills },
+        },
+      } : {}),
+    };
   }
 
   async function getBinding(companyId: string, agentKey: string, client: Pick<Db, "select"> = db) {
@@ -615,8 +635,8 @@ export function pluginManagedAgentService(
       return resolution(companyId, declaration, agent as Agent, "resolved");
   }
 
-  async function reconcile(agentKey: string, companyId: string) {
-      const declaration = declarationFor(agentKey);
+  async function reconcile(agentKey: string, companyId: string, overrides?: PluginManagedAgentOverrides) {
+      const declaration = declarationFor(agentKey, overrides);
       const current = await get(agentKey, companyId);
       if (current.agent) {
         const agent = await backfillManagedPauseReason(companyId, declaration, current.agent);

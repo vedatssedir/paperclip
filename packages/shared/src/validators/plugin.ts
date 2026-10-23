@@ -241,6 +241,7 @@ export const pluginManagedAgentDeclarationSchema = z.object({
     message: "agentKey must start with a lowercase alphanumeric and contain only lowercase letters, digits, dots, colons, underscores, or hyphens",
   }),
   displayName: z.string().min(1).max(100),
+  multiInstance: z.boolean().optional(),
   role: z.string().min(1).max(100).optional(),
   title: z.string().max(200).nullable().optional(),
   icon: z.string().max(100).nullable().optional(),
